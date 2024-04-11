@@ -8,7 +8,9 @@ namespace GarageGroup.Infra.Bot.Builder;
 partial class ChatFlowExtensions
 {
     public static ChatFlow<T> GetDataverseUserOrBreak<T>(
-        this ChatFlow<T> chatFlow, string? failureUserMessage, Func<T, DataverseUserData, T> mapFlowState)
+        this ChatFlow<T> chatFlow,
+        string? failureUserMessage, Func<T, DataverseUserData, T> mapFlowState,
+        Func<IChatFlowContext<T>, SkipOption>? skipFactory = null)
     {
         ArgumentNullException.ThrowIfNull(chatFlow);
         ArgumentNullException.ThrowIfNull(mapFlowState);
@@ -17,12 +19,21 @@ partial class ChatFlowExtensions
 
         ValueTask<ChatFlowJump<T>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
             =>
-            InnerGetDataverseUserJumpAsync(context, failureUserMessage, mapFlowState, cancellationToken);
+            InnerGetDataverseUserJumpAsync(context, failureUserMessage, mapFlowState, skipFactory, cancellationToken);
     }
 
     private static async ValueTask<ChatFlowJump<T>> InnerGetDataverseUserJumpAsync<T>(
-        IChatFlowContext<T> context, string? failureUserMessage, Func<T, DataverseUserData, T> mapFlowState, CancellationToken cancellationToken)
+        IChatFlowContext<T> context,
+        string? failureUserMessage,
+        Func<T, DataverseUserData, T> mapFlowState,
+        Func<IChatFlowContext<T>, SkipOption>? skipFactory,
+        CancellationToken cancellationToken)
     {
+        if (skipFactory?.Invoke(context).Skip is true)
+        {
+            return context.FlowState;
+        }
+
         var botUserJump = await context.InnerGetBotUserAsync(failureUserMessage, cancellationToken).ConfigureAwait(false);
         return botUserJump.Fold(GetDataverseUserDataJump, ChatFlowJump<T>.Break);
 

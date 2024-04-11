@@ -7,7 +7,10 @@ namespace GarageGroup.Infra.Bot.Builder;
 partial class ChatFlowExtensions
 {
     public static ChatFlow<T> GetBotUserOrBreak<T>(
-        this ChatFlow<T> chatFlow, string? failureUserMessage, Func<T, BotUser, T> mapFlowState)
+        this ChatFlow<T> chatFlow,
+        string? failureUserMessage,
+        Func<T, BotUser, T> mapFlowState,
+        Func<IChatFlowContext<T>, SkipOption>? skipFactory = null)
     {
         ArgumentNullException.ThrowIfNull(chatFlow);
         ArgumentNullException.ThrowIfNull(mapFlowState);
@@ -16,6 +19,11 @@ partial class ChatFlowExtensions
 
         async ValueTask<ChatFlowJump<T>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
         {
+            if (skipFactory?.Invoke(context).Skip is true)
+            {
+                return context.FlowState;
+            }
+
             var jump = await context.InnerGetBotUserAsync(failureUserMessage, cancellationToken).ConfigureAwait(false);
             return jump.Fold(InnerMapFlowState, ChatFlowJump<T>.Break);
 
