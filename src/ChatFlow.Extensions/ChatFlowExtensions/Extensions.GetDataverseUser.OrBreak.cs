@@ -13,20 +13,20 @@ partial class ChatFlowExtensions
         ArgumentNullException.ThrowIfNull(chatFlow);
         ArgumentNullException.ThrowIfNull(mapFlowState);
 
-        return chatFlow.ForwardValue(InnerInvokeValueAsync, mapFlowState);
+        return chatFlow.ForwardValue(InnerInvokeValueAsync);
 
-        ValueTask<ChatFlowJump<DataverseUserData>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
+        ValueTask<ChatFlowJump<T>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
             =>
-            InnerGetDataverseUserJumpAsync(context, failureUserMessage, cancellationToken);
+            InnerGetDataverseUserJumpAsync(context, failureUserMessage, mapFlowState, cancellationToken);
     }
 
-    private static async ValueTask<ChatFlowJump<DataverseUserData>> InnerGetDataverseUserJumpAsync<T>(
-        IChatFlowContext<T> context, string? failureUserMessage, CancellationToken cancellationToken)
+    private static async ValueTask<ChatFlowJump<T>> InnerGetDataverseUserJumpAsync<T>(
+        IChatFlowContext<T> context, string? failureUserMessage, Func<T, DataverseUserData, T> mapFlowState, CancellationToken cancellationToken)
     {
-        var botUserJump = await context.InnerGetBotUserJumpAsync(failureUserMessage, cancellationToken).ConfigureAwait(false);
-        return botUserJump.Forward(GetDataverseUserDataJump);
+        var botUserJump = await context.InnerGetBotUserAsync(failureUserMessage, cancellationToken).ConfigureAwait(false);
+        return botUserJump.Fold(GetDataverseUserDataJump, ChatFlowJump<T>.Break);
 
-        ChatFlowJump<DataverseUserData> GetDataverseUserDataJump(BotUser botUser)
+        ChatFlowJump<T> GetDataverseUserDataJump(BotUser botUser)
         {
             var claims = botUser.Claims.AsEnumerable();
             var dataverseUserIdResult = claims.GetValueOrAbsent("DataverseSystemUserId").Fold(ParseOrBreak, CreateAbsentClaimBreak);
@@ -36,12 +36,14 @@ partial class ChatFlowExtensions
                 return dataverseUserIdResult.FailureOrThrow();
             }
 
-            return new DataverseUserData(
+            var data = new DataverseUserData(
                 botUser: botUser,
                 systemUserId: dataverseUserIdResult.SuccessOrThrow(),
                 firstName: claims.GetValueOrAbsent("DataverseSystemUserFirstName").OrDefault(),
                 lastName: claims.GetValueOrAbsent("DataverseSystemUserLastName").OrDefault(),
                 fullName: claims.GetValueOrAbsent("DataverseSystemUserFullName").OrDefault());
+
+            return mapFlowState.Invoke(context.FlowState, data);
         }
 
         Result<Guid, ChatFlowBreakState> ParseOrBreak(string value)

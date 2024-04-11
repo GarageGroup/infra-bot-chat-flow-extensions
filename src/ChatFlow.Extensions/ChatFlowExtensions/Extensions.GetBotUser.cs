@@ -12,11 +12,13 @@ partial class ChatFlowExtensions
         ArgumentNullException.ThrowIfNull(chatFlow);
         ArgumentNullException.ThrowIfNull(mapFlowState);
 
-        return chatFlow.ForwardValue(InnerGetBotUserJumpAsync, mapFlowState);
-    }
+        return chatFlow.ForwardValue(InnerGetBotUserJumpAsync);
 
-    private static async ValueTask<ChatFlowJump<BotUser?>> InnerGetBotUserJumpAsync<T>(
-        IChatFlowContext<T> context, CancellationToken cancellationToken)
-        =>
-        await context.BotUserProvider.GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
+        async ValueTask<ChatFlowJump<T>> InnerGetBotUserJumpAsync(
+            IChatFlowContext<T> context, CancellationToken cancellationToken)
+        {
+            var botUser = await context.BotUserProvider.GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
+            return mapFlowState.Invoke(context.FlowState, botUser);
+        }
+    }
 }
