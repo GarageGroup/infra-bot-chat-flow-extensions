@@ -7,19 +7,33 @@ namespace GarageGroup.Infra.Bot.Builder;
 partial class ChatFlowExtensions
 {
     public static ChatFlow<T> GetBotUserOrBreak<T>(
-        this ChatFlow<T> chatFlow, string? failureUserMessage, Func<T, BotUser, T> mapFlowState)
+        this ChatFlow<T> chatFlow,
+        string? failureUserMessage,
+        Func<T, BotUser, T> mapFlowState,
+        Func<IChatFlowContext<T>, SkipOption>? skipFactory = null)
     {
         ArgumentNullException.ThrowIfNull(chatFlow);
         ArgumentNullException.ThrowIfNull(mapFlowState);
 
-        return chatFlow.ForwardValue(InnerInvokeValueAsync, mapFlowState);
+        return chatFlow.ForwardValue(InnerInvokeValueAsync);
 
-        ValueTask<ChatFlowJump<BotUser>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
-            =>
-            InnerGetBotUserJumpAsync(context, failureUserMessage, cancellationToken);
+        async ValueTask<ChatFlowJump<T>> InnerInvokeValueAsync(IChatFlowContext<T> context, CancellationToken cancellationToken)
+        {
+            if (skipFactory?.Invoke(context).Skip is true)
+            {
+                return context.FlowState;
+            }
+
+            var jump = await context.InnerGetBotUserAsync(failureUserMessage, cancellationToken).ConfigureAwait(false);
+            return jump.Fold(InnerMapFlowState, ChatFlowJump<T>.Break);
+
+            ChatFlowJump<T> InnerMapFlowState(BotUser botUser)
+                =>
+                mapFlowState.Invoke(context.FlowState, botUser);
+        }
     }
 
-    private static async ValueTask<ChatFlowJump<BotUser>> InnerGetBotUserJumpAsync<T>(
+    private static async ValueTask<Result<BotUser, ChatFlowBreakState>> InnerGetBotUserAsync<T>(
         this IChatFlowContext<T> context, string? failureUserMessage, CancellationToken cancellationToken)
     {
         var botUser = await context.BotUserProvider.GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
